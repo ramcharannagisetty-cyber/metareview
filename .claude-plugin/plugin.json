@@ -1,0 +1,17 @@
+{
+  "name": "metareview",
+  "version": "0.2.0",
+  "description": "One agent, two workflows: a nine-step systematic review (narrative synthesis) and an eight-step meta-analysis (from a question or a coding sheet), with quote-checked extraction, metafor-matched statistics, publication-bias triangulation, draft GRADE and PRISMA reports.",
+  "author": {
+    "name": "metareview"
+  },
+  "license": "MIT",
+  "commands": "./commands",
+  "agents": [
+    "./agents/screener.md",
+    "./agents/extractor.md",
+    "./agents/appraiser.md",
+    "./agents/critic.md"
+  ],
+  "skills": "./"
+}

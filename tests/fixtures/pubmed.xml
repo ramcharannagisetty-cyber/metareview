@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<PubmedArticleSet>
+<PubmedArticle>
+<MedlineCitation Status="MEDLINE" Owner="NLM">
+<PMID Version="1">100001</PMID>
+<Article PubModel="Print">
+<Journal><Title>Journal of Test Cardiology</Title><JournalIssue><PubDate><Year>2020</Year></PubDate></JournalIssue></Journal>
+<ArticleTitle>Colchicine after myocardial infarction: a randomized trial.</ArticleTitle>
+<Abstract>
+<AbstractText Label="BACKGROUND">Inflammation matters.</AbstractText>
+<AbstractText Label="METHODS">We randomised 240 patients.</AbstractText>
+</Abstract>
+<AuthorList><Author><LastName>Smith</LastName><Initials>J</Initials></Author><Author><LastName>Lee</LastName><Initials>K</Initials></Author></AuthorList>
+<Language>eng</Language>
+<PublicationTypeList><PublicationType>Journal Article</PublicationType><PublicationType>Randomized Controlled Trial</PublicationType></PublicationTypeList>
+</Article>
+<MeshHeadingList><MeshHeading><DescriptorName>Colchicine</DescriptorName></MeshHeading></MeshHeadingList>
+</MedlineCitation>
+<PubmedData><ArticleIdList><ArticleId IdType="pubmed">100001</ArticleId><ArticleId IdType="doi">10.1000/test1</ArticleId><ArticleId IdType="pmc">PMC9000001</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+<PubmedArticle>
+<MedlineCitation Status="MEDLINE" Owner="NLM">
+<PMID Version="1">100002</PMID>
+<Article PubModel="Print">
+<Journal><Title>Review Journal</Title><JournalIssue><PubDate><MedlineDate>2019 Jan-Feb</MedlineDate></PubDate></JournalIssue></Journal>
+<ArticleTitle>Colchicine in cardiovascular disease: a review.</ArticleTitle>
+<Abstract><AbstractText>Narrative review.</AbstractText></Abstract>
+<AuthorList><Author><CollectiveName>Study Group</CollectiveName></Author></AuthorList>
+<Language>eng</Language>
+<PublicationTypeList><PublicationType>Review</PublicationType></PublicationTypeList>
+</Article>
+</MedlineCitation>
+<PubmedData><ArticleIdList><ArticleId IdType="pubmed">100002</ArticleId></ArticleIdList></PubmedData>
+</PubmedArticle>
+</PubmedArticleSet>

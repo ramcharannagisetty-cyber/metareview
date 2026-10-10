@@ -1,0 +1,14 @@
+study,year,events_1,n_1,events_2,n_2,latitude,allocation
+Aronson,1948,4,123,11,139,44,random
+Ferguson & Simes,1949,6,306,29,303,55,random
+Rosenthal et al,1960,3,231,11,220,42,random
+Hart & Sutherland,1977,62,13598,248,12867,52,random
+Frimodt-Moller et al,1973,33,5069,47,5808,13,alternate
+Stein & Aronson,1953,180,1541,372,1451,44,alternate
+Vandiviere et al,1973,8,2545,10,629,19,random
+TPT Madras,1980,505,88391,499,88391,13,random
+Coetzee & Berjak,1968,29,7499,45,7277,27,random
+Rosenthal et al,1961,17,1716,65,1665,42,systematic
+Comstock et al,1974,186,50634,141,27338,18,systematic
+Comstock & Webster,1969,5,2498,3,2341,33,systematic
+Comstock et al,1976,27,16913,29,17854,33,systematic
