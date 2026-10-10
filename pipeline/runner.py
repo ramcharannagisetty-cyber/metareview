@@ -47,9 +47,12 @@ template's keys. Rules:
   COMPARATOR, OUTCOME, DESIGN, NOT_PRIMARY, LANGUAGE, OTHER.
 - outcomes: one per outcome, exactly one primary. type binary (RR/OR), continuous (MD/SMD) or effect (HR/RR/OR/MD
   reported with CI; measure must match what such studies report). lower_is_better true/false. mid: number or null.
-- search.query: a PubMed Boolean query like an information specialist: 2-3 concepts (population, intervention or
-  exposure, optionally design) each as MeSH terms OR free-text synonyms with truncation (e.g. colchicin*), joined
-  with AND; field tags [MeSH Terms], [tiab], [pt]. No outcome terms. No language limits. Aim for 100-3000 hits.
+- search.sources: first choose the databases that publish this kind of evidence (see SOURCES below); at least 2.
+  Clinical/biomedical -> pubmed + europepmc (+ clinicaltrials for interventions); economics/social/environment ->
+  openalex + semanticscholar; mixed -> pubmed + openalex. Each entry {"source", "query", "rationale"}; the query is
+  in that database's own syntax: 2-3 concepts (population, intervention or exposure, optionally design), synonyms
+  OR-ed within a concept, concepts AND-ed. No outcome terms. No language limits. Every hit is retrieved, so keep the
+  combined total screenable (under ~20000).
 - analysis: keep REML, knapp_hartung true, level 95, min_studies_to_pool 2; subgroups: ["design"] when designs mix.
 Reply with the JSON object only."""
 
@@ -72,7 +75,10 @@ class Runner:
         question = r.read('review.json')['question']
         errors, text = [], ''
         for attempt in range(4):
-            parts = [('QUESTION', question), ('TEMPLATE', proto.TEMPLATE)]
+            from . import sources as src
+            catalog = {n: {k: v for k, v in i.items()} for n, i in src.CATALOG.items()}
+            parts = [('QUESTION', question), ('TEMPLATE', proto.TEMPLATE), ('SOURCES', catalog),
+                     ('SUGGESTED SOURCES FOR THIS QUESTION', [{'source': n, 'why': w} for n, w in src.suggest(question)])]
             if errors:
                 parts.append(('PROBLEMS WITH YOUR PREVIOUS PROTOCOL (fix all)', '\n'.join(errors)))
             reply = self.ask('protocol', PROTOCOL_GUIDE, parts)

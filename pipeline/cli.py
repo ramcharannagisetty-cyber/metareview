@@ -167,6 +167,10 @@ def cmd_init(args):
     template = json.loads(json.dumps(proto.TEMPLATE))
     template['question'] = args.question
     template['analysis']['pool'] = args.mode != 'sr' or args.with_meta_analysis
+    from . import sources as src
+    picks = src.suggest(args.question)
+    template['search']['sources'] = [{'source': n, 'query': '', 'rationale': why} for n, why in picks]
+    say('Suggested sources (edit freely; run  sources  for the catalog): ' + ', '.join(n for n, _ in picks))
     review.write('protocol.json', template)
     say(f'Review created: {review.root}')
     say('NEXT:', stage(review)[1])
@@ -200,19 +204,34 @@ def cmd_protocol(args):
         say('WARNING: protocol changed after it was locked. Deviations must be reported; the lock is updated and logged.')
         review.log('protocol_changed', {'old': review.read('protocol.lock.json')['sha256'], 'new': sha(p)})
     if not args.offline:
-        n, errs = pubmed.count(p['search']['query'], p['search'].get('date_from'), p['search'].get('date_to'))
-        if errs:
-            say('PubMed reported problems with the query:', json.dumps(errs)[:500])
-            say('Fix search.query and run:  protocol check')
+        from . import sources as src
+        q = p['search']
+        total, problems = 0, []
+        for s_ in proto.search_sources(q):
+            try:
+                n = src.get(s_['source']).count(s_['query'], q.get('date_from'), q.get('date_to'))
+            except PipelineError as exc:
+                problems.append(f"{s_['source']}: {exc}")
+                continue
+            s_['expected_count'] = n
+            total += n
+            say(f"{s_['source']}: {n} hits")
+            if n == 0:
+                problems.append(f"{s_['source']}: zero hits; broaden the query (synonyms, controlled vocabulary plus free text, no outcome terms) or drop the source with a reason")
+        if problems:
+            say('SEARCH PROBLEMS:')
+            for x in problems:
+                say(' -', x)
+            say('Fix search.sources and run:  protocol check')
             sys.exit(2)
-        say(f'PubMed count for the query: {n}')
-        if n == 0:
-            say('Zero hits: broaden the query (synonyms, MeSH plus free text, no outcome terms). Then run:  protocol check')
+        batches = -(-total // TA_BATCH)
+        say(f'Total before de-duplication: {total} records (about {batches} title/abstract batches of {TA_BATCH}). Every hit is retrieved; nothing is truncated.')
+        if total > args.max_hits:
+            say(f'{total} records exceed {args.max_hits}: the queries are too broad for a feasible screen. Make them more specific (keep sensitivity: '
+                'synonyms for each concept, no outcome terms), or rerun with --max-hits N if the volume is intended. Then run:  protocol check')
             sys.exit(2)
-        if n > args.max_hits:
-            say(f'{n} hits exceed the limit of {args.max_hits}. Narrow the question/query (specific population or exposure; keep sensitivity), or rerun with --max-hits N. Then run:  protocol check')
-            sys.exit(2)
-        p['search']['expected_count'] = n
+        if q.get('sources') is None and q.get('query'):
+            q['expected_count'] = total
         review.write('protocol.json', p)
     review.write('protocol.lock.json', {'sha256': sha(p), 'locked': time.strftime('%Y-%m-%d')})
     review.log('protocol_locked', {'sha256': sha(p)})
@@ -221,29 +240,29 @@ def cmd_protocol(args):
 
 
 def cmd_search(args):
+    from . import sources as src
     review = Review.active()
     if not review.exists('protocol.lock.json'):
         raise PipelineError('lock the protocol first:  protocol check')
     p = review.read('protocol.json')
     q = p['search']
-    ids, total = pubmed.search_ids(q['query'], q.get('date_from'), q.get('date_to'), limit=args.limit)
-    say(f'PubMed: {total} hits, retrieving {len(ids)}')
-    records = pubmed.fetch(ids)
+    records, runs = [], []
+    for s_ in proto.search_sources(q):
+        got, total = src.get(s_['source']).fetch_all(s_['query'], q.get('date_from'), q.get('date_to'), progress=say)
+        runs.append({'source': s_['source'], 'query': s_['query'], 'rationale': s_.get('rationale'), 'date': time.strftime('%Y-%m-%d'),
+                     'hits': total, 'retrieved': len(got), 'complete': s_['source'] == 'clinicaltrials' or len(got) >= total - max(2, total // 200)})
+        say(f"{s_['source']}: {total} hits, {len(got)} retrieved")
+        records += got
     chased = 0
     if args.chase and args.chase_pmids:
-        seeds = [s.strip() for s in args.chase_pmids.split(',') if s.strip()]
+        seeds = [x.strip() for x in args.chase_pmids.split(',') if x.strip()]
         extra = set(pubmed.linked(seeds, 'pubmed_pubmed_citedin')) | set(pubmed.linked(seeds, 'pubmed_pubmed_refs'))
-        extra -= {r['pmid'] for r in records}
+        extra -= {r.get('pubmed_id') for r in records}
         chased = len(extra)
-        records += [{**r, 'source': 'citation_chase'} for r in pubmed.fetch(sorted(extra))]
-    seen_titles, unique, dups = {}, [], 0
-    for r in records:
-        key = re.sub(r'[^a-z0-9]', '', r['title'].lower())[:80]
-        if key and key in seen_titles:
-            dups += 1
-            continue
-        seen_titles[key] = r['pmid']
-        unique.append(r)
+        for r in pubmed.fetch(sorted(extra)):
+            records.append({**r, 'pubmed_id': r['pmid'], 'sources': ['citation_chase']})
+    identified = len(records)
+    unique, dups = src.deduplicate(records)
     review.path('search/records.jsonl').write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in unique), encoding='utf-8')
     pre = {}
     for r in unique:
@@ -254,16 +273,35 @@ def cmd_search(args):
     to_screen = [r for r in unique if r['pmid'] not in pre]
     for i, batch in enumerate(screening.batches(to_screen, TA_BATCH), 1):
         review.write(f'screening/ta/batch-{i:02d}.json', {'stage': 'ta', 'batch': i, 'records': [
-            {'pmid': r['pmid'], 'title': r['title'], 'abstract': r['abstract'], 'year': r['year'], 'pubtypes': r['pubtypes']} for r in batch]})
-    summary = {'date': time.strftime('%Y-%m-%d'), 'identified': len(records), 'duplicates_removed': dups, 'prescreen_excluded': len(pre),
+            {'pmid': r['pmid'], 'title': r['title'], 'abstract': r['abstract'], 'year': r['year'], 'pubtypes': r['pubtypes'],
+             'sources': r.get('sources', [])} for r in batch]})
+    summary = {'date': time.strftime('%Y-%m-%d'), 'identified': identified, 'duplicates_removed': dups, 'prescreen_excluded': len(pre),
                'to_screen': len(to_screen), 'batches': (len(to_screen) + TA_BATCH - 1) // TA_BATCH, 'chased': chased,
-               'complete': len(ids) >= total, 'limits': {k: v for k, v in q.items() if k in ('date_from', 'date_to', 'languages') and v}}
+               'complete': all(r['complete'] for r in runs), 'runs': runs,
+               'limits': {k: v for k, v in q.items() if k in ('date_from', 'date_to', 'languages') and v}}
     review.write('search/summary.json', summary)
-    review.log('search', summary)
-    say(f'Records: {len(records)} identified, {dups} duplicates, {len(pre)} excluded by rule (publication type/language), {len(to_screen)} to screen in {summary["batches"]} batches.')
-    if not summary['complete']:
-        say(f'WARNING: only {len(ids)} of {total} hits retrieved (limit). Raise --limit for a complete review.')
+    review.log('search', {k: v for k, v in summary.items() if k != 'runs'} | {'sources': [r['source'] for r in runs]})
+    say(f'Records: {identified} identified across {len(runs)} sources, {dups} duplicates removed, {len(pre)} excluded by rule '
+        f'(publication type/language), {len(to_screen)} to screen in {summary["batches"]} batches.')
+    for r in runs:
+        if not r['complete']:
+            say(f"WARNING: {r['source']} returned {r['retrieved']} of {r['hits']} hits; rerun  search  (temporary API limit).")
     say('NEXT:', stage(review)[1])
+
+
+def cmd_sources(args):
+    from . import sources as src
+    say('Available sources (choose at least 2 that fit the question; each gets its own query in its own syntax):')
+    for name, info in src.CATALOG.items():
+        say(f'\n{name}\n  covers: {info["covers"]}\n  best for: {info["best_for"]}\n  syntax: {info["syntax"]}')
+    try:
+        review = Review.active()
+        p = review.read('protocol.json', {})
+        say('\nSuggested for the active question:')
+        for name, why in src.suggest(review.read('review.json')['question'], p.get('pico')):
+            say(f'  - {name}: {why}')
+    except PipelineError:
+        pass
 
 
 def _load_decisions(review, stage_name, who, n, allowed):
@@ -339,9 +377,9 @@ def cmd_fulltext(args):
             continue
         text, err = ft.uploaded(review, pmid)
         source = 'upload'
+        rec = records.get(pmid, {})
         if text is None and not err:
-            text = ft.europepmc(records.get(pmid, {}).get('pmcid'), pmid)
-            source = 'europepmc'
+            text, source = ft.retrieve(rec)
         if text:
             review.path(f'fulltext/{pmid}.txt').write_text(text, encoding='utf-8')
             status[pmid] = {'status': 'ok', 'source': source, 'chars': len(text)}
@@ -510,8 +548,8 @@ def main(argv=None):
     for name in ('next', 'status'):
         sub.add_parser(name, help='what to do now').set_defaults(fn=cmd_next)
     s = sub.add_parser('protocol'); s.add_argument('action', choices=['check']); s.add_argument('--offline', action='store_true')
-    s.add_argument('--max-hits', type=int, default=3000); s.set_defaults(fn=cmd_protocol)
-    s = sub.add_parser('search'); s.add_argument('--limit', type=int, default=3000); s.add_argument('--chase', action='store_true')
+    s.add_argument('--max-hits', type=int, default=20000, help='refuse queries whose combined hits exceed this (screening feasibility)'); s.set_defaults(fn=cmd_protocol)
+    s = sub.add_parser('search', help='retrieve every hit from every chosen source, then de-duplicate'); s.add_argument('--chase', action='store_true')
     s.add_argument('--chase-pmids', default=''); s.set_defaults(fn=cmd_search)
     s = sub.add_parser('screen'); s.add_argument('stage', choices=['ta', 'ft']); s.set_defaults(fn=cmd_screen)
     sub.add_parser('fulltext').set_defaults(fn=cmd_fulltext)
@@ -520,6 +558,7 @@ def main(argv=None):
     sub.add_parser('analyze').set_defaults(fn=cmd_analyze)
     sub.add_parser('report').set_defaults(fn=cmd_report)
     sub.add_parser('prisma').set_defaults(fn=cmd_prisma)
+    sub.add_parser('sources', help='list databases, what they cover, their query syntax, and suggestions for the active question').set_defaults(fn=cmd_sources)
     s = sub.add_parser('run', help='API mode: run the whole review with your own API key'); s.add_argument('question', nargs='?')
     s.add_argument('--max-steps', type=int, default=400); s.set_defaults(fn=cmd_run)
     s = sub.add_parser('config', help='API mode settings: provider, model, effort, keys (stored in ~/.config/metareview/config.json)')

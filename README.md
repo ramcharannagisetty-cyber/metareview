@@ -13,7 +13,9 @@ The agent reads papers and proposes judgements; code does every count, check and
 
 ```
 question ─► protocol (PICO, criteria, outcomes, PubMed query; locked)
-         ─► search (PubMed E-utilities; dedup; rule-based pre-screen)
+         ─► source choice (agent picks databases for the topic: PubMed, Europe PMC, OpenAlex,
+            Semantic Scholar, ClinicalTrials.gov) and one query per database in its own syntax
+         ─► search (every hit retrieved, PubMed >9,999 split by date; duplicates merged across sources)
          ─► title/abstract screening: 2 blind AI reviewers, kappa, any-include advances
          ─► full texts (Europe PMC open access; your PDFs in fulltext/uploads/)
          ─► full-text screening: 2 blind AI reviewers + AI adjudicator
@@ -81,5 +83,5 @@ an AI and must be verified by the review team. `analysis/results.json` holds eve
 
 ## Limits
 
-PubMed only (no Embase/CENTRAL/registries). Open-access full texts only, unless you add PDFs. No
+Free sources only (no Embase, Scopus, Web of Science or CENTRAL, which need subscriptions). Open-access full texts only, unless you add PDFs. No
 conversion of medians/IQRs to means. GRADE indirectness is not rated. No human sign-off is implied.

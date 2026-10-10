@@ -21,7 +21,19 @@ def table(headers, rows):
 def reference(rec):
     authors = rec.get('authors') or []
     a = ', '.join(authors[:6]) + (', et al.' if len(authors) > 6 else '')
-    return f"{a} {rec.get('title', '')} {rec.get('journal', '')}. {rec.get('year', '')}." + (f" doi:{rec['doi']}" if rec.get('doi') else '') + f" PMID {rec.get('pmid')}."
+    return f"{a} {rec.get('title', '')} {rec.get('journal', '')}. {rec.get('year', '')}." + (f" doi:{rec['doi']}" if rec.get('doi') else '') + f" {idlabel(rec, rec.get('pmid'))}."
+
+
+def idlabel(rec, key):
+    """Human identifier for a record: PMID when it has one, else NCT number, DOI or the internal id."""
+    rec = rec or {}
+    if rec.get('pubmed_id') or (key and str(key).isdigit()):
+        return f"PMID {rec.get('pubmed_id') or key}"
+    if rec.get('nct_id'):
+        return rec['nct_id']
+    if rec.get('doi'):
+        return f"doi:{rec['doi']}"
+    return str(key)
 
 
 def build(review):
@@ -67,9 +79,16 @@ def build(review):
                   (f" The locked protocol was modified {len(changes)} time(s) after locking (see log.jsonl)." if changes else ''))
     if sheet:
         md.append(f"**Studies.** {search.get('identified', 0)} studies were supplied by the researcher as a coding sheet (`coding_sheet.csv`); no search or screening was performed by the agent. Effect sizes were taken from the sheet as coded.")
-    md.append(f"**Search (PRISMA-S).** PubMed via NCBI E-utilities, searched {search.get('date', 'n/a')}; {search.get('identified', 0)} records"
-              + (f"; limits {search.get('limits')}" if search.get('limits') else '') + '. Query:\n```text\n' + protocol['search']['query'] + '\n```'
-              + (f"\nCitation chasing added {search.get('chased', 0)} records." if search.get('chased') else ''))
+    if not sheet:
+        runs = search.get('runs') or [{'source': 'pubmed', 'query': protocol['search'].get('query', ''), 'date': search.get('date'),
+                                       'hits': search.get('identified'), 'retrieved': search.get('identified'), 'rationale': 'single PubMed search'}]
+        md.append(f"**Search (PRISMA-S).** {len(runs)} source(s) chosen for this question and searched exhaustively (every hit retrieved); "
+                  f"{search.get('identified', 0)} records identified, {search.get('duplicates_removed', 0)} duplicates removed across sources"
+                  + (f"; limits {search.get('limits')}" if search.get('limits') else '') + '.'
+                  + (f" Citation chasing added {search.get('chased', 0)} records." if search.get('chased') else ''))
+        md.append(table(['Source', 'Searched', 'Hits', 'Retrieved', 'Why chosen'],
+                        [[x['source'], x.get('date', ''), x.get('hits', ''), x.get('retrieved', ''), x.get('rationale', '')] for x in runs]))
+        md.append('\n'.join(f"Query ({x['source']}):\n```text\n{x['query']}\n```" for x in runs))
     one = settings.get('reviewers') == 'single'
     if one:
         md.append('**Screening.** Rule-based pre-screen removed non-primary publication types only. Title/abstract and full text: a SINGLE AI reviewer '
@@ -92,18 +111,18 @@ def build(review):
         ['Excluded at full text', str(sum(counts['reports_excluded'].values())) + (' (' + ', '.join(f'{k} {v}' for k, v in sorted(counts['reports_excluded'].items())) + ')' if counts['reports_excluded'] else '')],
         ['Studies included', counts['studies_included']]]), '![PRISMA flow](prisma.svg)']
     if counts['not_retrieved_pmids']:
-        md.append('Reports not retrieved (add `<pmid>.pdf` or `.txt` to `fulltext/uploads/` and rerun `fulltext`): ' + ', '.join(f"{study_label({'record': records.get(p, {})})} (PMID {p})" for p in counts['not_retrieved_pmids'][:40]) + (' …' if len(counts['not_retrieved_pmids']) > 40 else ''))
+        md.append('Reports not retrieved (add the PDF or text to `fulltext/uploads/` under the name shown and rerun `fulltext`): ' + ', '.join(f"{study_label({'record': records.get(p, {})})} ({idlabel(records.get(p), p)}; upload as {p}.pdf)" for p in counts['not_retrieved_pmids'][:40]) + (' …' if len(counts['not_retrieved_pmids']) > 40 else ''))
     ft_final = review.read('screening/ft_final.json', {})
     excluded_ft = [(p, d) for p, d in sorted(ft_final.items()) if d['decision'] == 'exclude']
     if excluded_ft:
-        md += ['### Studies excluded at full text', table(['Study', 'Reason'], [[f"{study_label({'record': records.get(p, {})})} (PMID {p})", f"{d.get('code')}: {d.get('reason', '')}"] for p, d in excluded_ft])]
+        md += ['### Studies excluded at full text', table(['Study', 'Reason'], [[f"{study_label({'record': records.get(p, {})})} ({idlabel(records.get(p), p)})", f"{d.get('code')}: {d.get('reason', '')}"] for p, d in excluded_ft])]
     studies = results['studies']
     if studies:
         rows = []
         for s in studies:
             ex = review.read(f"extraction/{s['pmid']}.final.json", {}).get('study', {})
             val = lambda k: (ex.get(k) or {}).get('value')
-            rows.append([f"{s['label']} (PMID {s['pmid']})", val('design'), val('country'), val('n_total'), val('population'), val('intervention_or_exposure'), val('comparator'), val('follow_up')])
+            rows.append([f"{s['label']} ({idlabel(records.get(s['pmid']), s['pmid'])})", val('design'), val('country'), val('n_total'), val('population'), val('intervention_or_exposure'), val('comparator'), val('follow_up')])
         md += ['### Included studies', table(['Study', 'Design', 'Country', 'N', 'Population', 'Intervention/exposure', 'Comparator', 'Follow-up'], rows)]
         rows = []
         for s in studies:
@@ -192,7 +211,7 @@ def build(review):
         md += ['### Summary of findings (draft)', table(['Outcome', 'Pooled effect (95% CI)', 'Studies (participants)', 'Certainty', 'What this means'], rows)]
     md += ['## Discussion', '[For the review team: interpretation, comparison with prior reviews, implications. Not AI-written.]', '## Limitations']
     lim = ['Studies were supplied by the researcher; the agent did not search or screen, so completeness depends on the researcher\'s own search.' if sheet else
-           'PubMed was the only database searched; Embase, CENTRAL and trial registries were not searched, so relevant studies may have been missed.',
+           (f"Databases searched: {', '.join(x['source'] for x in (search.get('runs') or [{'source': 'pubmed'}]))}. Subscription databases (Embase, Scopus, Web of Science, CENTRAL, EconLit) were not searched, so relevant studies may have been missed."),
            f"{counts['reports_not_retrieved']} reports had no open-access full text and were not assessed." if counts['reports_not_retrieved'] else None,
            'All screening, extraction and risk-of-bias judgements were made by AI and are unverified by humans.' + (' A single AI agent performed every task (no independent second reviewer, and the critique was not independent).' if one else ''),
            'GRADE ratings are rule-based drafts; indirectness was not assessed.' if pooled_mode else 'No quantitative pooling was performed; vote counting by direction does not weight studies by size or precision.',

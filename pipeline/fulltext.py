@@ -112,3 +112,74 @@ def uploaded(review, pmid):
     if p.is_file():
         return pdf_text(p)
     return None, None
+
+
+def doi_to_pmcid(doi):
+    import json
+    if not doi:
+        return None
+    data = _fetch(f'{EPMC}search?query=DOI:%22{doi}%22&format=json&resultType=lite')
+    try:
+        hits = json.loads(data).get('resultList', {}).get('result', []) if data else []
+    except ValueError:
+        return None
+    return next((h['pmcid'] for h in hits if h.get('pmcid')), None)
+
+
+def registry_text(nct):
+    """ClinicalTrials.gov record (protocol and any posted results) flattened to readable 'path: value' lines."""
+    import json
+    data = _fetch(f'https://clinicaltrials.gov/api/v2/studies/{nct}')
+    if not data:
+        return None
+    try:
+        study = json.loads(data)
+    except ValueError:
+        return None
+    lines = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f'{path}.{k}' if path else k)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, f'{path}[{i}]')
+        elif node not in (None, ''):
+            lines.append(f'{path}: {node}')
+    walk({k: v for k, v in study.items() if k in ('protocolSection', 'resultsSection')}, '')
+    text = '\n'.join(lines)
+    return text if len(text) > 500 else None
+
+
+def oa_pdf(url):
+    if not url:
+        return None
+    data = _fetch(url)
+    if not data or not data[:5].startswith(b'%PDF'):
+        return None
+    import io
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return None
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        text = '\n'.join((page.extract_text() or '') for page in reader.pages)
+    except Exception:
+        return None
+    return text if len(re.sub(r'\s+', '', text)) > 1500 else None
+
+
+def retrieve(rec):
+    """Try every open route for a record's full text. Returns (text, source)."""
+    if rec.get('nct_id'):
+        return registry_text(rec['nct_id']), 'clinicaltrials.gov'
+    pmcid = rec.get('pmcid') or (lookup_pmcid(rec['pubmed_id']) if rec.get('pubmed_id') else None) or doi_to_pmcid(rec.get('doi'))
+    text = europepmc(pmcid) if pmcid else None
+    if text:
+        return text, 'europepmc'
+    text = oa_pdf(rec.get('oa_url'))
+    if text:
+        return text, 'open-access pdf'
+    return None, None

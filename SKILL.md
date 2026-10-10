@@ -44,7 +44,8 @@ The nine standard steps map onto the pipeline like this:
 3. *Team*: one AI agent plus the human researcher; the report says so. Dual blind review exists
    (`--reviewers dual`) when independent double screening is required.
 4. *Protocol*: written before searching, locked by `protocol check`; any later change is logged as a deviation.
-5. *Search*: PubMed through E-utilities, query recorded verbatim (PRISMA-S), hit count checked.
+5. *Search*: the databases chosen for this question (PubMed, Europe PMC, OpenAlex, Semantic Scholar, ClinicalTrials.gov),
+   every hit retrieved, duplicates merged across sources, each query and count recorded (PRISMA-S).
 6. *Select studies*: criteria applied at title/abstract then full text; every exclusion carries a code and reason.
 7. *Extract data*: the standardized form in `agents/extractor.md`; every number must sit in a verbatim quote.
 8. *Synthesize*: a qualitative synthesis is always produced (direction of effect per study, SWiM vote count);
@@ -92,9 +93,19 @@ The eight steps (Hansen, Steinmetz & Block 2021) as the engine runs them:
   continuous (means/SDs; MD or SMD), effect (reported HR/RR/OR/MD with CI; measure must match) or
   correlation (r, n). `lower_is_better` true/false. `mid`: minimal important difference on the measure's
   scale, or null to use the null threshold.
-- `search.query`: a PubMed Boolean query built like an information specialist: 2-3 concepts (population,
-  intervention/exposure, sometimes design), each as MeSH terms OR free-text synonyms with truncation,
-  joined with AND. No outcome terms. No language limit unless the protocol says so. Aim for roughly 100-3000 hits.
+- `search.sources`: **choose the databases before writing any query.** Run `MR sources` to see the catalog and the
+  suggestion for this question (also printed by `init`). Pick by where the evidence on this topic is published:
+  - clinical, medical, public-health → `pubmed` + `europepmc` (+ `clinicaltrials` for interventions: unpublished trials);
+  - economics, labour, income, policy, social science, environment, disasters → `openalex` + `semanticscholar`;
+  - questions that cross both (e.g. health effects of job loss) → `pubmed` + `openalex` (+ a third if useful).
+  At least 2 sources (or a written `single_source_reason`). Each entry is `{"source", "query", "rationale"}`; the
+  `rationale` says in one sentence why this database fits the question. Write each query **in that database's own
+  syntax** (shown by `MR sources`): 2-3 concepts (population, intervention/exposure, sometimes design), each as
+  controlled vocabulary where the database has it (MeSH for PubMed) OR free-text synonyms, joined with AND. No outcome
+  terms. No language limit unless the protocol says so.
+  Every hit of every query is retrieved. PubMed result sets above 9,999 are split by publication date so the whole
+  set comes back. `protocol check` prints the hit count per source and stops if the combined total is not
+  screenable (default 20,000); then make the queries more specific, keeping all synonyms.
 - `analysis`: `pool` (false in sr mode), REML + Knapp-Hartung by default; `subgroups` and `meta_regression`
   list extraction subgroup keys (for example `["design"]`, `["year"]`).
 

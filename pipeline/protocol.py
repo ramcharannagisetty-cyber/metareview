@@ -16,7 +16,8 @@ TEMPLATE = {
     'exclusion': [{'id': 'E1', 'text': '', 'code': 'POPULATION'}],
     'outcomes': [{'id': 'primary', 'label': '', 'type': 'binary', 'measure': 'RR', 'primary': True,
                   'lower_is_better': True, 'mid': None, 'timepoint': ''}],
-    'search': {'query': '', 'date_from': None, 'date_to': None, 'languages': []},
+    'search': {'sources': [{'source': 'pubmed', 'query': '', 'rationale': ''}],
+               'date_from': None, 'date_to': None, 'languages': []},
     'analysis': {'pool': True, 'model': 'REML', 'knapp_hartung': True, 'level': 95, 'min_studies_to_pool': 2,
                  'subgroups': [], 'meta_regression': [], 'outlier_diagnostics': True},
 }
@@ -71,13 +72,46 @@ def validate(p):
         primaries += bool(o.get('primary'))
     if primaries != 1:
         errors.append('exactly one outcome must have "primary": true')
-    if not str(p['search'].get('query', '')).strip():
-        errors.append('search.query is empty (a PubMed Boolean query)')
+    errors += validate_sources(p['search'])
     a = p['analysis']
     if a.get('model') not in ('REML', 'DL', 'FE'):
         errors.append('analysis.model must be REML, DL or FE')
     if a.get('level') not in (90, 95, 99):
         errors.append('analysis.level must be 90, 95 or 99')
+    return errors
+
+
+def search_sources(search):
+    """The protocol's sources; legacy protocols with a single search.query are PubMed-only."""
+    if search.get('sources'):
+        return search['sources']
+    if str(search.get('query', '')).strip():
+        return [{'source': 'pubmed', 'query': search['query'], 'rationale': 'legacy single-source protocol'}]
+    return []
+
+
+def validate_sources(search):
+    from .sources import SOURCES
+    errors = []
+    if search.get('sources') is None:
+        if not str(search.get('query', '')).strip():
+            errors.append('search.sources is missing: list the databases you chose, each with its own query and rationale (run  sources  for the catalog)')
+        return errors
+    srcs = search['sources']
+    names = [s.get('source') for s in srcs]
+    for s in srcs:
+        if s.get('source') not in SOURCES:
+            errors.append(f"unknown source {s.get('source')!r}; choose from {sorted(SOURCES)}")
+        if not str(s.get('query', '')).strip():
+            errors.append(f"source {s.get('source')}: query is empty (write it in that database's own syntax)")
+        if not str(s.get('rationale', '')).strip():
+            errors.append(f"source {s.get('source')}: rationale is empty (say why this database fits the question)")
+        if s.get('source') == 'openalex' and ',' in str(s.get('query', '')):
+            errors.append('source openalex: remove commas from the query (use AND/OR)')
+    if len(set(names)) != len(names):
+        errors.append('each source may appear only once')
+    if len(set(names)) < 2 and not str(search.get('single_source_reason', '')).strip():
+        errors.append('search at least 2 databases (systematic-review standard), or give search.single_source_reason')
     return errors
 
 

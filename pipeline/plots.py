@@ -118,7 +118,7 @@ def funnel(outcome):
 
 def prisma(c):
     boxes = [
-        ('Records identified from PubMed', f"n = {c['records_identified']}"),
+        ('Records identified (databases, registers)', f"n = {c['records_identified']}"),
         ('Duplicates removed', f"n = {c['duplicates_removed']}"),
         ('Records screened (title/abstract)', f"n = {c['records_screened']}"),
         ('Records excluded', f"n = {c['records_excluded']}"),

@@ -2,6 +2,6 @@
   "name": "metareview-local",
   "owner": {"name": "metareview"},
   "plugins": [
-    {"name": "metareview", "source": "./", "description": "Autonomous systematic review with meta-analysis", "version": "0.2.1"}
+    {"name": "metareview", "source": "./", "description": "Autonomous systematic review with meta-analysis", "version": "0.3.0"}
   ]
 }
