@@ -60,6 +60,11 @@ def build(review):
               f"Population: {pico['population']}. Intervention/exposure: {pico['intervention_or_exposure']}. Comparator: {pico['comparator']}. Outcomes: {pico['outcomes']}. "
               f"Designs: {', '.join(protocol['designs'])}.")
     md.append(table(['Id', 'Criterion'], [[c['id'], c['text']] for c in protocol['inclusion']] + [[c['id'], c['text'] + f" ({c['code']})"] for c in protocol['exclusion']]))
+    deviations = list(protocol.get('deviations') or [])
+    changes = [e for e in review.lines('log.jsonl') if e.get('action') == 'protocol_changed']
+    if deviations or changes:
+        md.append('**Protocol deviations.** ' + (' '.join(f'({i + 1}) {d}' for i, d in enumerate(deviations)) if deviations else '') +
+                  (f" The locked protocol was modified {len(changes)} time(s) after locking (see log.jsonl)." if changes else ''))
     if sheet:
         md.append(f"**Studies.** {search.get('identified', 0)} studies were supplied by the researcher as a coding sheet (`coding_sheet.csv`); no search or screening was performed by the agent. Effect sizes were taken from the sheet as coded.")
     md.append(f"**Search (PRISMA-S).** PubMed via NCBI E-utilities, searched {search.get('date', 'n/a')}; {search.get('identified', 0)} records"
@@ -174,7 +179,7 @@ def build(review):
         elif o.get('single'):
             s = o['single']
             md.append(f"One study ({s['label']}): {o['measure']} {_f(s['display'][0])} (95% CI {_f(s['display'][1])} to {_f(s['display'][2])}). No pooling.")
-        else:
+        elif not nar.get('rows'):
             md.append('No usable data.')
         for w in o.get('warnings', []):
             md.append(f'- Warning: {w}')

@@ -54,11 +54,21 @@ def validate(record, tool):
     return errors
 
 
+NO_INFO = {'no information', 'unclear'}
+
+
 def overall(record, tool):
-    """Worst-domain rule. RoB 2: any 'high' -> high; any 'some concerns' -> some concerns; else low."""
+    """Worst-domain rule over informative judgements; 'no information'/'unclear' domains are reported but do not
+    set the overall unless every domain lacks information. RoB 2: 3+ 'some concerns' may be judged high."""
     spec = TOOLS[tool]
     order = {lvl: i for i, lvl in enumerate(spec['levels'])}
-    worst = max((d['judgement'] for d in record['domains']), key=lambda j: order.get(j, -1))
+    informative = [d['judgement'] for d in record['domains'] if d['judgement'] not in NO_INFO]
+    if not informative:
+        return spec['levels'][-1] if spec['levels'][-1] in NO_INFO else 'unclear', 'no domain had information'
+    worst = max(informative, key=lambda j: order.get(j, -1))
+    missing = sum(d['judgement'] in NO_INFO for d in record['domains'])
+    if missing and tool != 'RoB 2':
+        return worst, f'worst informative domain ({missing} domain(s) with no information)'
     if tool == 'RoB 2' and sum(d['judgement'] == 'some concerns' for d in record['domains']) >= 3 and worst != 'high':
         return 'high', 'several domains with some concerns (RoB 2 guidance: may be judged high)'
     return worst, 'worst domain'
